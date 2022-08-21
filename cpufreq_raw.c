@@ -17,8 +17,8 @@
 #include <linux/kthread.h>
 
 struct raw_gov_info_struct {
-	cputime64_t prev_cpu_idle;
-	cputime64_t prev_cpu_wall;
+	u64 prev_cpu_idle;
+	u64 prev_cpu_wall;
 
 	struct cpufreq_policy *policy;
 	struct kthread_worker kraw_worker;
@@ -84,7 +84,7 @@ unsigned int get_frequency_table_target(struct cpufreq_policy *policy, unsigned 
  */
 static unsigned long get_raw_cpu_idle_time(struct cpufreq_policy *policy)
 {
-	cputime64_t prev_wall_time;
+	u64 prev_wall_time;
 	u64 cur_idle_time_us;
 	unsigned long idle_time_us;
 	struct raw_gov_info_struct *info;
@@ -95,7 +95,7 @@ static unsigned long get_raw_cpu_idle_time(struct cpufreq_policy *policy)
 
 	prev_wall_time = info->prev_cpu_wall;
 	cur_idle_time_us = get_cpu_idle_time_us(policy->cpu, &prev_wall_time);
-	idle_time_us = (unsigned long) cputime64_sub(cur_idle_time_us, info->prev_cpu_idle);
+	idle_time_us = (unsigned long) cur_idle_time_us - info->prev_cpu_idle;
 	printk("DEBUG:RAWLINSON - RAW GOVERNOR - get_raw_cpu_idle_time -> IDLE_TIME (%lu) us\n", idle_time_us);
 
 	mutex_unlock(&raw_mutex);
