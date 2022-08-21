@@ -326,70 +326,85 @@ static void raw_gov_cancel_work(struct raw_gov_info_struct *info)
 	printk("DEBUG:RAWLINSON - raw_gov_cancel_work - Removendo o raw_monitor\n");
 }
 
-static int cpufreq_governor_raw(struct cpufreq_policy *policy, unsigned int event)
+static void raw_update_info(struct cpufreq_policy *policy)
 {
-	unsigned int cpu = policy->cpu;
-	struct raw_gov_info_struct *info, *affected_info;
-	int i;
-	int rc = 0;
+	freq_table = policy->freq_table;
+}
 
-	freq_table = cpufreq_frequency_get_table(cpu);
+static int raw_start(struct cpufreq_policy *policy)
+{
+	int i;
+	struct raw_gov_info_struct *info, *affected_info;
+	unsigned int cpu = policy->cpu;
+
+	raw_update_info(policy);
+
 	info = &per_cpu(raw_gov_info, cpu);
 
-	switch (event) {
-		case CPUFREQ_GOV_START:
-			if (!cpu_online(cpu))
-				return -EINVAL;
+	if (!cpu_online(cpu))
+		return -EINVAL;
 
-			/* initialize raw_gov_info for all affected cpus */
-			for_each_cpu(i, policy->cpus) {
-				affected_info = &per_cpu(raw_gov_info, i);
-				affected_info->policy = policy;
-				affected_info->prev_cpu_idle = get_cpu_idle_time_us(i, &affected_info->prev_cpu_wall);
-			}
-
-			BUG_ON(!policy->cur);
-
-			/* setup timer */
-			mutex_init(&info->timer_mutex);
-			raw_gov_init_work(info);
-		break;
-
-		case CPUFREQ_GOV_STOP:
-			/* cancel timer */
-			raw_gov_cancel_work(info);
-			mutex_destroy(&info->timer_mutex);
-
-			/* clean raw_gov_info for all affected cpus */
-			for_each_cpu (i, policy->cpus) {
-				info = &per_cpu(raw_gov_info, i);
-				info->policy = NULL;
-			}
-		break;
-
-		case CPUFREQ_GOV_LIMITS:
-			mutex_lock(&raw_mutex);
-			if (policy->max < info->policy->cur)
-				__cpufreq_driver_target(info->policy, policy->max, CPUFREQ_RELATION_H);
-			else if (policy->min > info->policy->cur)
-				__cpufreq_driver_target(info->policy, policy->min, CPUFREQ_RELATION_L);
-			mutex_unlock(&raw_mutex);
-		break;
+	/* initialize raw_gov_info for all affected cpus */
+	for_each_cpu(i, policy->cpus) {
+		affected_info = &per_cpu(raw_gov_info, i);
+		affected_info->policy = policy;
+		affected_info->prev_cpu_idle = get_cpu_idle_time_us(i, &affected_info->prev_cpu_wall);
 	}
-	return rc;
+
+	BUG_ON(!policy->cur);
+
+	/* setup timer */
+	mutex_init(&info->timer_mutex);
+	raw_gov_init_work(info);
+
+	return 0;
+}
+
+static void raw_stop(struct cpufreq_policy *policy)
+{
+	int i;
+	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
+
+	raw_update_info(policy);
+
+	/* cancel timer */
+	raw_gov_cancel_work(info);
+	mutex_destroy(&info->timer_mutex);
+
+	/* clean raw_gov_info for all affected cpus */
+	for_each_cpu (i, policy->cpus) {
+		info = &per_cpu(raw_gov_info, i);
+		info->policy = NULL;
+	}
+}
+
+static void raw_limits(struct cpufreq_policy *policy)
+{
+	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
+
+	raw_update_info(policy);
+
+	mutex_lock(&raw_mutex);
+	if (policy->max < info->policy->cur)
+		__cpufreq_driver_target(info->policy, policy->max, CPUFREQ_RELATION_H);
+	else if (policy->min > info->policy->cur)
+		__cpufreq_driver_target(info->policy, policy->min, CPUFREQ_RELATION_L);
+	mutex_unlock(&raw_mutex);
 }
 
 #ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_RAW
 static
 #endif
 struct cpufreq_governor cpufreq_gov_raw = {
-       .name						= CPUFREQ_CONST_RAW_GOVERNOR_NAME, // Valor => "raw"
-       .governor               		= cpufreq_governor_raw,
-	   .store_setspeed		   		= cpufreq_raw_set,
-	   .get_cpu_idle_time 			= get_raw_cpu_idle_time,
-	   .set_frequency 		   		= set_frequency,
-	   .wake_up_kworker 		   	= wake_up_kworker,
-       .owner                  		= THIS_MODULE,
+	.name = "raw",
+	.start = raw_start,
+	.stop = raw_stop,
+	.limits = raw_limits,
+	.store_setspeed = cpufreq_raw_set,
+	.get_cpu_idle_time = get_raw_cpu_idle_time,
+	.set_frequency = set_frequency,
+	.wake_up_kworker = wake_up_kworker,
+	.owner = THIS_MODULE,
 };
 
 static int __init cpufreq_gov_raw_init(void)
