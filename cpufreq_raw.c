@@ -80,30 +80,6 @@ unsigned int get_frequency_table_target(struct cpufreq_policy *policy, unsigned 
 }
 
 /**
- * Obtem a quantidade de tempo em que o CPU se encontra em idle time durante a atuação do RAW Governor.
- */
-static unsigned long get_raw_cpu_idle_time(struct cpufreq_policy *policy)
-{
-	u64 prev_wall_time;
-	u64 cur_idle_time_us;
-	unsigned long idle_time_us;
-	struct raw_gov_info_struct *info;
-
-	info = &per_cpu(raw_gov_info, policy->cpu);
-
-	mutex_lock(&raw_mutex);
-
-	prev_wall_time = info->prev_cpu_wall;
-	cur_idle_time_us = get_cpu_idle_time_us(policy->cpu, &prev_wall_time);
-	idle_time_us = (unsigned long) cur_idle_time_us - info->prev_cpu_idle;
-	printk("DEBUG:RAWLINSON - RAW GOVERNOR - get_raw_cpu_idle_time -> IDLE_TIME (%lu) us\n", idle_time_us);
-
-	mutex_unlock(&raw_mutex);
-
-	return idle_time_us;
-}
-
-/**
  * Sets the CPU frequency to freq.
  */
 static int set_frequency(struct cpufreq_policy *policy, struct task_struct *task, unsigned int freq)
@@ -171,46 +147,6 @@ static int cpufreq_raw_set(struct cpufreq_policy *policy, unsigned int freq)
 	printk("DEBUG:RAWLINSON - cpufreq_raw_set(%u) for cpu %u, freq %u kHz\n", freq, policy->cpu, policy->cur);
 
 	mutex_unlock(&raw_mutex);
-	return ret;
-}
-
-/**
- * SINALIZA PARA O RAW MONITOR QUE O TAREFA PREEMPTADA VOLTOU A EXECUCAO.
- */
-static int wake_up_kworker(struct cpufreq_policy *policy, struct task_struct *task, unsigned long long tick_timer_rtai_ns, unsigned long long deadline_ns)
-{
-	int ret = -EINVAL;
-	struct timespec64 timespecKernel;
-	struct raw_gov_info_struct *info;
-	unsigned long cur_idle_time_us;
-
-	info = &per_cpu(raw_gov_info, policy->cpu);
-
-	cur_idle_time_us = get_raw_cpu_idle_time(policy);
-
-	mutex_lock(&info->timer_mutex);
-	if(task && task->pid > 0)
-	{
-		if(info->tarefa_sinalizada && info->tarefa_sinalizada->pid > 0 && info->tarefa_sinalizada->pid == task->pid && info->deadline_tarefa_sinalizada == deadline_ns)
-		{
-			info->tick_timer_rtai_ns = tick_timer_rtai_ns;
-		}
-		else
-		{
-			info->tarefa_sinalizada = task;
-			info->deadline_tarefa_sinalizada = deadline_ns;
-			info->tick_timer_rtai_ns = tick_timer_rtai_ns;
-
-			ktime_get_coarse_real_ts64(&timespecKernel);
-			info->start_timer_delay_monitor = timespecKernel.tv_nsec; //** PEGANDO O TIMER ATUAL DO KERNEL (ns).
-
-			kthread_flush_work(&info->work);
-			kthread_queue_work(&info->kraw_worker, &info->work);
-
-			printk("DEBUG:RAWLINSON - RAW GOVERNOR - wake_up_kworker PID (%d) -> Deadline(%llu)\n", info->tarefa_sinalizada->pid, info->deadline_tarefa_sinalizada);
-		}
-	}
-	mutex_unlock(&info->timer_mutex);
 	return ret;
 }
 
@@ -403,9 +339,7 @@ struct cpufreq_governor cpufreq_gov_raw = {
 	.stop = raw_stop,
 	.limits = raw_limits,
 	.store_setspeed = cpufreq_raw_set,
-	.get_cpu_idle_time = get_raw_cpu_idle_time,
 	.set_frequency = set_frequency,
-	.wake_up_kworker = wake_up_kworker,
 	.owner = THIS_MODULE,
 };
 
