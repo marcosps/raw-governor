@@ -231,8 +231,6 @@ void raw_gov_work(struct kthread_work *work)
 
 static void raw_gov_init_work(struct raw_gov_info_struct *info)
 {
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
-
 	info->tarefa_sinalizada = NULL;
 	info->deadline_tarefa_sinalizada = 0;
 
@@ -248,7 +246,7 @@ static void raw_gov_init_work(struct raw_gov_info_struct *info)
 	kthread_bind(info->kraw_worker.task, info->policy->cpu);
 
 	/* must use the FIFO scheduler as it is realtime sensitive */
-	sched_setscheduler(info->kraw_worker.task, SCHED_FIFO, &param);
+	sched_set_fifo(info->kraw_worker.task);
 
 	kthread_init_work(&info->work, raw_gov_work);
 
