@@ -180,7 +180,7 @@ static int cpufreq_raw_set(struct cpufreq_policy *policy, unsigned int freq)
 static int wake_up_kworker(struct cpufreq_policy *policy, struct task_struct *task, unsigned long long tick_timer_rtai_ns, unsigned long long deadline_ns)
 {
 	int ret = -EINVAL;
-	struct timespec timespecKernel;
+	struct timespec64 timespecKernel;
 	struct raw_gov_info_struct *info;
 	unsigned long cur_idle_time_us;
 
@@ -201,7 +201,7 @@ static int wake_up_kworker(struct cpufreq_policy *policy, struct task_struct *ta
 			info->deadline_tarefa_sinalizada = deadline_ns;
 			info->tick_timer_rtai_ns = tick_timer_rtai_ns;
 
-			timespecKernel = current_kernel_time();
+			ktime_get_coarse_real_ts64(&timespecKernel);
 			info->start_timer_delay_monitor = timespecKernel.tv_nsec; //** PEGANDO O TIMER ATUAL DO KERNEL (ns).
 
 			flush_kthread_work(&info->work);
@@ -216,7 +216,7 @@ static int wake_up_kworker(struct cpufreq_policy *policy, struct task_struct *ta
 
 static int calc_freq(struct raw_gov_info_struct *info)
 {
-	struct timespec timespecKernel;
+	struct timespec64 timespecKernel;
 	double cpu_frequency_target = 0.0;
 	double tempoRestanteProcessamento = 0.0;
 	long long tempoRestanteProcessamento_ns = 0;
@@ -224,7 +224,7 @@ static int calc_freq(struct raw_gov_info_struct *info)
 	long long intervalo_tempo_ativacao_monitor;
 	unsigned int valid_freq = 0;
 
-	timespecKernel = current_kernel_time();
+	ktime_get_coarse_real_ts64(&timespecKernel);
 	info->end_timer_delay_monitor = timespecKernel.tv_nsec; //** PEGANDO O TIMER ATUAL DO KERNEL (ns).
 	intervalo_tempo_ativacao_monitor = info->end_timer_delay_monitor - info->start_timer_delay_monitor;
 	tick_timer_atual = info->tick_timer_rtai_ns + intervalo_tempo_ativacao_monitor;
