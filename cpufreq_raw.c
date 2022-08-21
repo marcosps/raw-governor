@@ -290,10 +290,12 @@ void raw_gov_work(struct kthread_work *work)
 	mutex_unlock(&info->timer_mutex);
 }
 
+// FIXME: This needs to be removed
+#define CPUID_RTAI 0
+
 static void raw_gov_init_work(struct raw_gov_info_struct *info)
 {
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
-	struct cpumask cpu_rtai = cpumask_of_cpu(CPUID_RTAI);
 
 	info->tarefa_sinalizada = NULL;
 	info->deadline_tarefa_sinalizada = 0;
@@ -306,7 +308,7 @@ static void raw_gov_init_work(struct raw_gov_info_struct *info)
 	printk("DEBUG:RAWLINSON - RAW GOVERNOR - raw_gov_init_work -> PID (%d)\n", info->kraw_worker.task->pid);
 
 //	get_task_struct(info->kraw_worker.task);
-	set_cpus_allowed_ptr(info->kraw_worker.task, &cpu_rtai);
+	set_cpus_allowed_ptr(info->kraw_worker.task, cpumask_of(CPUID_RTAI));
 	kthread_bind(info->kraw_worker.task, info->policy->cpu);
 
 	/* must use the FIFO scheduler as it is realtime sensitive */
