@@ -204,8 +204,8 @@ static int wake_up_kworker(struct cpufreq_policy *policy, struct task_struct *ta
 			ktime_get_coarse_real_ts64(&timespecKernel);
 			info->start_timer_delay_monitor = timespecKernel.tv_nsec; //** PEGANDO O TIMER ATUAL DO KERNEL (ns).
 
-			flush_kthread_work(&info->work);
-			queue_kthread_work(&info->kraw_worker, &info->work);
+			kthread_flush_work(&info->work);
+			kthread_queue_work(&info->kraw_worker, &info->work);
 
 			printk("DEBUG:RAWLINSON - RAW GOVERNOR - wake_up_kworker PID (%d) -> Deadline(%llu)\n", info->tarefa_sinalizada->pid, info->deadline_tarefa_sinalizada);
 		}
@@ -300,7 +300,7 @@ static void raw_gov_init_work(struct raw_gov_info_struct *info)
 	info->tarefa_sinalizada = NULL;
 	info->deadline_tarefa_sinalizada = 0;
 
-	init_kthread_worker(&info->kraw_worker);
+	kthread_init_worker(&info->kraw_worker);
 	info->kraw_worker.task = kthread_create(kthread_worker_fn, &info->kraw_worker, "raw_monitor/%d", info->policy->cpu);
 	if (IS_ERR(info->kraw_worker.task)) {
 		printk(KERN_ERR "Creation of raw_monitor/%d failed\n", info->policy->cpu);
@@ -314,16 +314,16 @@ static void raw_gov_init_work(struct raw_gov_info_struct *info)
 	/* must use the FIFO scheduler as it is realtime sensitive */
 	sched_setscheduler(info->kraw_worker.task, SCHED_FIFO, &param);
 
-	init_kthread_work(&info->work, raw_gov_work);
+	kthread_init_work(&info->work, raw_gov_work);
 
-	flush_kthread_work(&info->work);
-	queue_kthread_work(&info->kraw_worker, &info->work);
+	kthread_flush_work(&info->work);
+	kthread_queue_work(&info->kraw_worker, &info->work);
 }
 
 static void raw_gov_cancel_work(struct raw_gov_info_struct *info)
 {
 	/* Kill irq worker */
-	flush_kthread_worker(&info->kraw_worker);
+	kthread_flush_worker(&info->kraw_worker);
 	kthread_stop(info->kraw_worker.task);
 	printk("DEBUG:RAWLINSON - raw_gov_cancel_work - Removendo o raw_monitor\n");
 }
