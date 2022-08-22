@@ -46,13 +46,14 @@ struct cpufreq_frequency_table *freq_table;
 unsigned int get_max_frequency_table(struct cpufreq_policy *policy)
 {
 	//OBS.: as frequencias comecam do MAIOR para o MENOR. Logo a posicao ZERO do vetor possui a maior frequencia.
-	return freq_table[0].frequency;
+	return policy->freq_table[0].frequency;
 }
 
 unsigned int get_frequency_table_target(struct cpufreq_policy *policy, unsigned int target_freq)
 {
 	unsigned int new_freq;
 	unsigned int i;
+	struct cpufreq_frequency_table *freq_table = policy->freq_table;
 
 	if (!cpu_online(policy->cpu))
 		return -EINVAL;
@@ -262,18 +263,11 @@ static void raw_gov_cancel_work(struct raw_gov_info_struct *info)
 	printk("DEBUG:RAWLINSON - raw_gov_cancel_work - Removendo o raw_monitor\n");
 }
 
-static void raw_update_info(struct cpufreq_policy *policy)
-{
-	freq_table = policy->freq_table;
-}
-
 static int raw_start(struct cpufreq_policy *policy)
 {
 	int i;
 	struct raw_gov_info_struct *info, *affected_info;
 	unsigned int cpu = policy->cpu;
-
-	raw_update_info(policy);
 
 	info = &per_cpu(raw_gov_info, cpu);
 
@@ -301,8 +295,6 @@ static void raw_stop(struct cpufreq_policy *policy)
 	int i;
 	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
 
-	raw_update_info(policy);
-
 	/* cancel timer */
 	raw_gov_cancel_work(info);
 	mutex_destroy(&info->timer_mutex);
@@ -317,8 +309,6 @@ static void raw_stop(struct cpufreq_policy *policy)
 static void raw_limits(struct cpufreq_policy *policy)
 {
 	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
-
-	raw_update_info(policy);
 
 	mutex_lock(&raw_mutex);
 	if (policy->max < info->policy->cur)
