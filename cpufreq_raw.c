@@ -189,9 +189,6 @@ static void raw_limits(struct cpufreq_policy *policy)
 	mutex_unlock(&raw_mutex);
 }
 
-#ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_RAW
-static
-#endif
 struct cpufreq_governor cpufreq_gov_raw = {
 	.name = "raw",
 	.start = raw_start,
@@ -201,24 +198,10 @@ struct cpufreq_governor cpufreq_gov_raw = {
 	.owner = THIS_MODULE,
 };
 
-static int __init cpufreq_gov_raw_init(void)
-{
-	return cpufreq_register_governor(&cpufreq_gov_raw);
-}
-
-static void __exit cpufreq_gov_raw_exit(void)
-{
-	cpufreq_unregister_governor(&cpufreq_gov_raw);
-}
-
 MODULE_AUTHOR("Rawlinson <rawlinson.goncalves@gmail.com>");
 MODULE_AUTHOR("Marcos Paulo de Souza <marcos.souza.org@gmail.com>");
 MODULE_DESCRIPTION("CPUfreq policy governor 'raw'");
 MODULE_LICENSE("GPL");
 
-#ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_RAW
-fs_initcall(cpufreq_gov_raw_init);
-#else
-module_init(cpufreq_gov_raw_init);
-#endif
-module_exit(cpufreq_gov_raw_exit);
+cpufreq_governor_init(cpufreq_gov_raw);
+cpufreq_governor_exit(cpufreq_gov_raw);
