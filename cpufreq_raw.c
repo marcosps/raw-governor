@@ -80,57 +80,6 @@ unsigned int get_frequency_table_target(struct cpufreq_policy *policy, unsigned 
 	return new_freq;
 }
 
-/**
- * Sets the CPU frequency to freq.
- */
-static int set_frequency(struct cpufreq_policy *policy, struct task_struct *task, unsigned int freq)
-{
-	unsigned int valid_freq = 0;
-	int ret = -EINVAL;
-
-	mutex_lock(&raw_mutex);
-
-	// Se alguma frequencia foi definida... então o monitor não precisa mais verificar a tarefa que foi sinalizada... \o/
-	if(task && task->pid > 0)
-	{
-		task->flagPreemption = 0;
-		task->flagReturnPreemption = 0;
-		task->flagCheckedRawMonitor = 0;
-
-		/*
-		 * We're safe from concurrent calls to ->target() here
-		 * as we hold the raw_mutex lock. If we were calling
-		 * cpufreq_driver_target, a deadlock situation might occur:
-		 * A: cpufreq_set (lock raw_mutex) ->
-		 *      cpufreq_driver_target(lock policy->lock)
-		 * B: cpufreq_set_policy(lock policy->lock) ->
-		 *      __cpufreq_governor ->
-		 *         cpufreq_governor_raw (lock raw_mutex)
-		 */
-		valid_freq = get_frequency_table_target(policy, freq);
-		if(valid_freq >= task->cpu_frequency_min)
-		{
-			ret = __cpufreq_driver_target(policy, valid_freq, CPUFREQ_RELATION_H);
-
-			//Atualizando a frequencia da tarefa para uma frequencia valida.
-			task->cpu_frequency = policy->cur; // (KHz)
-
-			printk("DEBUG:RAWLINSON - RAW GOVERNOR - set_frequency(%u) for cpu %u - %u KHz - GOV(%s) -> PID (%d)\n", freq, policy->cpu, policy->cur, policy->governor->name, task->pid);
-		}
-		else
-		{
-			ret = __cpufreq_driver_target(policy, task->cpu_frequency_min, CPUFREQ_RELATION_H);
-
-			//Atualizando a frequencia da tarefa para uma frequencia valida.
-			task->cpu_frequency = policy->cur; // (KHz)
-
-			printk("DEBUG:RAWLINSON - RAW GOVERNOR - set_frequency(%u) - OBS.: FREQUENCIA INVALIDA! PID (%d) [FREQ_ALVO(%u KHz) < FREQ_MIN(%u KHz)] \n", freq, task->pid, valid_freq, task->cpu_frequency_min);
-		}
-	}
-
-	mutex_unlock(&raw_mutex);
-	return ret;
-}
 
 /**
  * Sets the CPU frequency to freq.
@@ -149,82 +98,6 @@ static int cpufreq_raw_set(struct cpufreq_policy *policy, unsigned int freq)
 
 	mutex_unlock(&raw_mutex);
 	return ret;
-}
-
-static int calc_freq(struct raw_gov_info_struct *info)
-{
-	struct timespec64 timespecKernel;
-	double cpu_frequency_target = 0.0;
-	double tempoRestanteProcessamento = 0.0;
-	long long tempoRestanteProcessamento_ns = 0;
-	long long tick_timer_atual;
-	long long intervalo_tempo_ativacao_monitor;
-	unsigned int valid_freq = 0;
-
-	ktime_get_coarse_real_ts64(&timespecKernel);
-	info->end_timer_delay_monitor = timespecKernel.tv_nsec; //** PEGANDO O TIMER ATUAL DO KERNEL (ns).
-	intervalo_tempo_ativacao_monitor = info->end_timer_delay_monitor - info->start_timer_delay_monitor;
-	tick_timer_atual = info->tick_timer_rtai_ns + intervalo_tempo_ativacao_monitor;
-
-	tempoRestanteProcessamento_ns = info->deadline_tarefa_sinalizada - tick_timer_atual; // ns
-	tempoRestanteProcessamento = tempoRestanteProcessamento_ns / 1000000000.0; // UNIDADE AQUI EH: nanosegundo(s) para segundo(s) (10^9).
-	if(tempoRestanteProcessamento_ns > 0)
-	{
-		cpu_frequency_target = (info->tarefa_sinalizada->rwcec / tempoRestanteProcessamento) ; // Unidade: Ciclos/segundo (a conversao para segundos foi feita acima 10^9)
-		cpu_frequency_target = cpu_frequency_target / 1000.0; // Unidade: Khz (convertendo para de Hz para KHz)
-		valid_freq = get_frequency_table_target(info->policy, cpu_frequency_target);
-
-		printk("DEBUG:RAWLINSON - calc_freq - RWCEC(%ld) / TRP(%lld ns) ===> TIMER(%llu) ==> DelayMonitor(%llu) => FREQ(%u) \n", info->tarefa_sinalizada->rwcec, tempoRestanteProcessamento_ns, tick_timer_atual, intervalo_tempo_ativacao_monitor, valid_freq);
-	}
-	else
-	{
-		/* OBS.:
-		 * QUER DIZER QUE O DEADLINE DA TAREFA FOI VIOLADO... ENTAO EH APLICADO A MAIOR FREQUENCIA DO PROCESSADOR...
-		 * PARA NAO ATRASAR A EXECUCAO DAS DEMAIS TAREFAS.
-		 **/
-		valid_freq = get_max_frequency_table(info->policy);
-
-		printk("DEBUG:RAWLINSON - DEADLINE VIOLADO - calc_freq - RWCEC(%ld) / TRP(%lld ns) ===> TIMER(%llu) ==> DelayMonitor(%llu) => FREQ(%u) \n", info->tarefa_sinalizada->rwcec, tempoRestanteProcessamento_ns, tick_timer_atual, intervalo_tempo_ativacao_monitor, valid_freq);
-	}
-	return valid_freq;
-}
-
-static void clear_task_monitor(struct raw_gov_info_struct *info)
-{
-	info->tarefa_sinalizada = NULL;
-	info->deadline_tarefa_sinalizada = 0;
-	info->tick_timer_rtai_ns = 0;
-}
-
-void raw_gov_work(struct kthread_work *work)
-{
-	struct raw_gov_info_struct *info;
-	unsigned long target_freq = 0;
-
-	info = container_of(work, struct raw_gov_info_struct, work);
-
-	mutex_lock(&info->timer_mutex);
-	if(info->tarefa_sinalizada && info->tarefa_sinalizada->pid > 0)
-	{
-		if(info->tarefa_sinalizada->rwcec > 0)
-		{
-			target_freq = calc_freq(info);
-			if(target_freq < info->tarefa_sinalizada->cpu_frequency_min)
-				target_freq = info->tarefa_sinalizada->cpu_frequency_min;
-
-			__cpufreq_driver_target(info->policy, target_freq, CPUFREQ_RELATION_H);
-			info->tarefa_sinalizada->cpu_frequency = target_freq; // (KHz) Nova frequencia para a tarefa... visando diminuir o tempo de folga da tarefa.
-
-			printk("-------------------------------[ RAW MONITOR ]------------------------------\n");
-			printk("DEBUG:RAWLINSON - raw_gov_work(%lu) for cpu %u, freq %u kHz - PID(%d)\n", target_freq, info->policy->cpu, info->policy->cur, info->tarefa_sinalizada->pid);
-		}
-
-		info->tarefa_sinalizada->flagReturnPreemption = 0;
-		info->tarefa_sinalizada->flagCheckedRawMonitor = 1;
-
-		clear_task_monitor(info);
-	}
-	mutex_unlock(&info->timer_mutex);
 }
 
 // FIXME: This needs to be removed
@@ -248,8 +121,6 @@ static void raw_gov_init_work(struct raw_gov_info_struct *info)
 
 	/* must use the FIFO scheduler as it is realtime sensitive */
 	sched_set_fifo(info->kraw_worker.task);
-
-	kthread_init_work(&info->work, raw_gov_work);
 
 	kthread_flush_work(&info->work);
 	kthread_queue_work(&info->kraw_worker, &info->work);
@@ -327,7 +198,6 @@ struct cpufreq_governor cpufreq_gov_raw = {
 	.stop = raw_stop,
 	.limits = raw_limits,
 	.store_setspeed = cpufreq_raw_set,
-	.set_frequency = set_frequency,
 	.owner = THIS_MODULE,
 };
 
