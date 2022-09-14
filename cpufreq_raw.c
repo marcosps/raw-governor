@@ -29,28 +29,22 @@ struct raw_gov_info_struct {
 
 static DEFINE_PER_CPU(struct raw_gov_info_struct, raw_gov_info);
 
-static DEFINE_MUTEX(raw_mutex);
-
 /**
  * Sets the CPU frequency to freq.
  */
 static int set_speed(struct cpufreq_policy *policy, unsigned int freq)
 {
-	int ret;
-
-	pr_info(":)\n");
-	mutex_lock(&raw_mutex);
-
-	ret = __cpufreq_driver_target(policy, freq, CPUFREQ_RELATION_H);
-
-	mutex_unlock(&raw_mutex);
-
-	return ret;
+	pr_info("setting freq to %u\n", freq);
+	/*
+	 * If cpufreq_driver_target is used there is a kernel oops about
+	 * scheduling while atomic
+	 */
+	return __cpufreq_driver_target(policy, freq, CPUFREQ_RELATION_H);
 }
 
 static ssize_t show_speed(struct cpufreq_policy *policy, char *buf)
 {
-	pr_info(":)\n");
+	pr_info("\n");
 	return sprintf(buf, "%u\n", policy->cur);
 }
 
