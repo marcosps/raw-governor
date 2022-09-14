@@ -31,53 +31,27 @@ static DEFINE_PER_CPU(struct raw_gov_info_struct, raw_gov_info);
 
 static DEFINE_MUTEX(raw_mutex);
 
-unsigned int get_frequency_table_target(struct cpufreq_policy *policy, unsigned int target_freq)
-{
-	unsigned int new_freq;
-	unsigned int i;
-	struct cpufreq_frequency_table *freq_table = policy->freq_table;
-
-	if (!cpu_online(policy->cpu))
-		return -EINVAL;
-
-	//OBS.: as frequencias comecam do MAIOR para o MENOR.
-	new_freq = freq_table[0].frequency;
-	for (i = 0; (freq_table[i].frequency != CPUFREQ_TABLE_END); i++) {
-		unsigned int freq = freq_table[i].frequency;
-
-		if (freq == CPUFREQ_ENTRY_INVALID)
-			continue;
-
-		if ((freq < policy->min) || (freq > policy->max))
-			continue;
-
-		if (freq < target_freq) {
-			break;
-		}
-		new_freq = freq;
-	}
-
-	pr_debug("(%u) kHz for cpu %u => NOVA FREQ(%u kHz)\n", target_freq, policy->cpu, new_freq);
-
-	return new_freq;
-}
-
 /**
  * Sets the CPU frequency to freq.
  */
-static int cpufreq_raw_set(struct cpufreq_policy *policy, unsigned int freq)
+static int set_speed(struct cpufreq_policy *policy, unsigned int freq)
 {
-	unsigned int valid_freq = 0;
-	int ret = -EINVAL;
+	int ret;
 
+	pr_info(":)\n");
 	mutex_lock(&raw_mutex);
 
 	ret = __cpufreq_driver_target(policy, freq, CPUFREQ_RELATION_H);
 
-	pr_debug("(%u) for cpu %u, freq %u kHz\n", freq, policy->cpu, policy->cur);
-
 	mutex_unlock(&raw_mutex);
+
 	return ret;
+}
+
+static ssize_t show_speed(struct cpufreq_policy *policy, char *buf)
+{
+	pr_info(":)\n");
+	return sprintf(buf, "%u\n", policy->cur);
 }
 
 static int raw_start(struct cpufreq_policy *policy)
@@ -120,24 +94,13 @@ static void raw_stop(struct cpufreq_policy *policy)
 	}
 }
 
-static void raw_limits(struct cpufreq_policy *policy)
-{
-	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
-
-	mutex_lock(&raw_mutex);
-	if (policy->max < info->policy->cur)
-		__cpufreq_driver_target(info->policy, policy->max, CPUFREQ_RELATION_H);
-	else if (policy->min > info->policy->cur)
-		__cpufreq_driver_target(info->policy, policy->min, CPUFREQ_RELATION_L);
-	mutex_unlock(&raw_mutex);
-}
-
 struct cpufreq_governor cpufreq_gov_raw = {
 	.name = "raw",
 	.start = raw_start,
 	.stop = raw_stop,
-	.limits = raw_limits,
-	.store_setspeed = cpufreq_raw_set,
+	.limits = cpufreq_policy_apply_limits,
+	.store_setspeed = set_speed,
+	.show_setspeed = show_speed,
 	.owner = THIS_MODULE,
 };
 
