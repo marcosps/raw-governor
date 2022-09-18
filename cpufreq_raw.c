@@ -6,22 +6,10 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/cpufreq.h>
-#include <linux/cpu.h>
-#include <linux/jiffies.h>
-#include <linux/kernel_stat.h>
 #include <linux/mutex.h>
-#include <linux/tick.h>
-#include <linux/hrtimer.h>
-#include <linux/ktime.h>
-#include <linux/sched.h>
-#include <linux/kthread.h>
 
 struct raw_gov_info_struct {
-	u64 prev_cpu_idle;
-	u64 prev_cpu_wall;
-
 	struct cpufreq_policy *policy;
 
 	struct mutex timer_mutex;
@@ -69,7 +57,6 @@ static int raw_start(struct cpufreq_policy *policy)
 	for_each_cpu(i, policy->cpus) {
 		affected_info = &per_cpu(raw_gov_info, i);
 		affected_info->policy = policy;
-		affected_info->prev_cpu_idle = get_cpu_idle_time_us(i, &affected_info->prev_cpu_wall);
 	}
 
 	BUG_ON(!policy->cur);
