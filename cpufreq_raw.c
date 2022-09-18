@@ -83,12 +83,13 @@ static void raw_stop(struct cpufreq_policy *policy)
 
 struct cpufreq_governor cpufreq_gov_raw = {
 	.name = "raw",
+	.owner = THIS_MODULE,
+	.flags = CPUFREQ_GOV_DYNAMIC_SWITCHING,
 	.start = raw_start,
 	.stop = raw_stop,
 	.limits = cpufreq_policy_apply_limits,
 	.store_setspeed = set_speed,
 	.show_setspeed = show_speed,
-	.owner = THIS_MODULE,
 };
 
 MODULE_AUTHOR("Rawlinson <rawlinson.goncalves@gmail.com>");
