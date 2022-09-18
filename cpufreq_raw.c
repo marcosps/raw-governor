@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/cpufreq.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
 
 struct raw_gov_info_struct {
 	struct cpufreq_policy *policy;
@@ -42,6 +43,29 @@ static ssize_t show_speed(struct cpufreq_policy *policy, char *buf)
 	return sprintf(buf, "%u\n", policy->cur);
 }
 
+static int raw_init(struct cpufreq_policy *policy)
+{
+	unsigned int *def_freq;
+
+	def_freq = kzalloc(sizeof(*def_freq), GFP_KERNEL);
+	if (!def_freq)
+		return -ENOMEM;
+
+	/* Store the current frequency of the cpu */
+	*def_freq = policy->cur;
+
+	policy->governor_data = def_freq;
+	return 0;
+}
+
+static void raw_exit(struct cpufreq_policy *policy)
+{
+	mutex_lock(&raw_mutex);
+	kfree(policy->governor_data);
+	policy->governor_data = NULL;
+	mutex_unlock(&raw_mutex);
+}
+
 static int raw_start(struct cpufreq_policy *policy)
 {
 	int i;
@@ -70,9 +94,12 @@ static int raw_start(struct cpufreq_policy *policy)
 static void raw_stop(struct cpufreq_policy *policy)
 {
 	int i;
+	unsigned int *def_freq = policy->governor_data;
 	struct raw_gov_info_struct *info = &per_cpu(raw_gov_info, policy->cpu);
 
 	mutex_destroy(&info->timer_mutex);
+
+	*def_freq = 0;
 
 	/* clean raw_gov_info for all affected cpus */
 	for_each_cpu (i, policy->cpus) {
@@ -85,6 +112,8 @@ struct cpufreq_governor cpufreq_gov_raw = {
 	.name = "raw",
 	.owner = THIS_MODULE,
 	.flags = CPUFREQ_GOV_DYNAMIC_SWITCHING,
+	.init = raw_init,
+	.exit = raw_exit,
 	.start = raw_start,
 	.stop = raw_stop,
 	.limits = cpufreq_policy_apply_limits,
