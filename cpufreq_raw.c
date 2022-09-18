@@ -30,14 +30,12 @@ struct raw_gov_info_struct {
 static DEFINE_PER_CPU(struct raw_gov_info_struct, raw_gov_info);
 static DEFINE_MUTEX(raw_mutex);
 
-/**
- * Sets the CPU frequency to freq.
- */
+/* Sets the CPU frequency to freq. */
 static int set_speed(struct cpufreq_policy *policy, unsigned int freq)
 {
 	int ret;
 
-	pr_info("setting freq to %u\n", freq);
+	pr_info("cpu %u: setting freq to %u\n", policy->cpu, freq);
 
 	/*
 	 * If cpufreq_driver_target is used there is a kernel oops about
@@ -52,7 +50,7 @@ static int set_speed(struct cpufreq_policy *policy, unsigned int freq)
 
 static ssize_t show_speed(struct cpufreq_policy *policy, char *buf)
 {
-	pr_info("\n");
+	pr_info("cpu %u\n", policy->cpu);
 	return sprintf(buf, "%u\n", policy->cur);
 }
 
