@@ -30,47 +30,60 @@ module_param_string(func, func_name, KSYM_NAME_LEN, 0644);
 MODULE_PARM_DESC(func, "Function to kretprobe; this module will report the"
 			" function's execution time");
 
+/*
+ * TODO:
+ * store the default frequency on kretprobe registration time.
+ * 	this impacts in the cases of processes without any freq set being 0, setting to minumum.
+ */
 static int ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 	//unsigned long retval = regs_return_value(regs);
 	struct cpufreq_policy *policy;
 	unsigned int cpu;
 	unsigned int target_freq, cur;
-	char *gov_name;
-	int ret;
+	int ret = 0;
 
-	/* Only deal with DEADLINE tasks */
-	if (!task_has_dl_policy(current))
+	/* Skip kernel threadds */
+	if (!current->mm)
 		return 0;
+
+	/*
+	 * Only deal with DEADLINE tasks.
+	 * IMPORTANT: Do not be confused between task policy and cpufreq policies.
+	 * Disable for now, testing!
+	 */
+	/*
+	if (current->policy != SCHED_DEADLINE)
+		return 0;
+	*/
 
 	/* Return earlier if the process don't set a preffered freq */
+	/* FIXME: set pref_freq to the value before changing the first time */
+	/*
 	if (!current->pref_freq)
 		return 0;
-
-	target_freq = current->pref_freq;
+	*/
 
 	cpu = smp_processor_id();
 	policy = cpufreq_cpu_get(cpu);
-	gov_name = policy->governor->name;
 
-	/* Only deal with userspace governor */
-	if (strcmp(gov_name, "userspace"))
+	cur = policy->cur;
+	target_freq = current->pref_freq;
+
+	/* Return earlier if the frequency is already the desired one */
+	if (target_freq == cur)
 		return 0;
 
-	 policy->cur;
-
-	/* Invert frequencies */
-	if (cur == policy->min)
-		target_freq = policy->max;
-	else if (cur == policy->max)
-		target_freq = policy->min;
+	/* Only deal with userspace governor */
+	if (strcmp(policy->governor->name, "userspace"))
+		return 0;
 
 	/* calling setspeed from cpufreq_userspace governor */
 	ret = policy->governor->store_setspeed(policy, target_freq);
 
-	pr_info("CPU: %u, governor %s, %u -> %u? ret: %d, current cmd: %s, running? %d\n",
-			cpu, policy->governor->name, cur, target_freq, ret,
-			current->comm, task_is_running(current));
+	pr_info("CPU: %u, governor %s, %u -> %u? ret: %d, current freq: %u, cmd: %s(%u), running? %d\n",
+			cpu, policy->governor->name, cur, target_freq, ret, policy->cur,
+			current->comm, current->pid, task_is_running(current));
 	return 0;
 }
 NOKPROBE_SYMBOL(ret_handler);
